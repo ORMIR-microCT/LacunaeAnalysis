@@ -1,0 +1,16 @@
+batch:
+  scans:
+    - image_path: input_lacunae_scans/f0000593.aim
+      output_dir: outputs/f0000593
+    - image_path: input_lacunae_scans/f0000594.aim
+      output_dir: outputs/f0000594
+
+thresholding:
+  method: peak
+  manual_threshold: 0.0
+  use_otsu: true
+
+density_filter:
+  lower_volume_um3: 0.0
+  upper_volume_um3: null
+

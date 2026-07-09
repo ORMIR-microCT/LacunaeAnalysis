@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lacunae-analysis"
+version = "0.1.0"
+description = "Lacunae analysis workflow for 1.2 um microCT scans"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "SimpleITK",
+  "matplotlib",
+  "pytest",
+  "aimio-py",
+]
+
+[project.scripts]
+lacunae-analysis = "lacunae_analysis.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
