@@ -6,7 +6,14 @@ This repository is being migrated into an installable `src/` layout so the workf
 
 ## Quick Start
 
-Install the package in your active environment:
+Create and activate the conda environment first:
+
+```bash
+conda create -n lacunae-analysis python=3.10
+conda activate lacunae-analysis
+```
+
+Install the package in the active environment:
 
 ```bash
 pip install -e .
