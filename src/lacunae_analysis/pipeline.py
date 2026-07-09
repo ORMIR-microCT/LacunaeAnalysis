@@ -98,6 +98,18 @@ def _resolve_batch_scan_path(input_dir: Path, image_path_value: str) -> Path:
     return input_dir / image_path.name
 
 
+def summarize_batch_results(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """Build a stable batch summary table from per-scan result rows."""
+    table = pd.DataFrame(rows)
+    preferred_columns = ["scan_name", "image_path", "status", "error"]
+    present_preferred = [column for column in preferred_columns if column in table.columns]
+    remaining_columns = [column for column in table.columns if column not in preferred_columns]
+    ordered_columns = present_preferred + remaining_columns
+    if not ordered_columns:
+        return table
+    return table.reindex(columns=ordered_columns)
+
+
 def run_single_scan(
     scan_input: ScanInput,
     threshold_settings: ThresholdSettings | None = None,
@@ -220,7 +232,7 @@ def run_batch(
             }
         )
 
-    return pd.DataFrame(rows)
+    return summarize_batch_results(rows)
 
 
 def run_batch_job(
@@ -286,7 +298,7 @@ def run_batch_job(
             }
         )
 
-    table = pd.DataFrame(rows)
+    table = summarize_batch_results(rows)
     write_batch_summary_csv(output_path / "batch_summary.csv", table)
     write_batch_summary_json(output_path / "batch_summary.json", table, resolved_config)
     return table

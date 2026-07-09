@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from lacunae_analysis.models import BatchRun, DensityFilterSettings, LoadedScan, ScanInput, ThresholdSettings
-from lacunae_analysis.pipeline import run_batch, run_single_scan
+from lacunae_analysis.pipeline import run_batch, run_batch_job, run_single_scan, summarize_batch_results
 
 
 def make_scan() -> LoadedScan:
@@ -120,3 +120,94 @@ def test_run_batch_builds_rows_from_run_single_scan(monkeypatch: pytest.MonkeyPa
     ]
     assert table.loc[table["scan_name"] == "alpha", "group"].item() == "control"
     assert table.loc[table["scan_name"] == "beta", "lacuna_density_per_mm3"].item() == 4.5
+
+
+def test_summarize_batch_results_returns_stable_dataframe() -> None:
+    frame = summarize_batch_results(
+        [
+            {"scan_name": "alpha", "image_path": "/tmp/alpha.aim", "status": "ok", "n_lacunae": 10},
+            {"scan_name": "beta", "image_path": "/tmp/beta.aim", "status": "error", "error": "bad scan"},
+        ]
+    )
+
+    assert isinstance(frame, pd.DataFrame)
+    assert frame.columns.tolist()[:4] == ["scan_name", "image_path", "status", "error"]
+    assert frame["scan_name"].tolist() == ["alpha", "beta"]
+    assert frame.loc[frame["scan_name"] == "alpha", "n_lacunae"].item() == 10
+    assert pd.isna(frame.loc[frame["scan_name"] == "alpha", "error"].item())
+    assert frame.loc[frame["scan_name"] == "beta", "error"].item() == "bad scan"
+
+
+def test_run_batch_job_writes_batch_summary_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "inputs"
+    output_dir = tmp_path / "outputs"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    for scan_name in ("alpha", "beta"):
+        (input_dir / f"{scan_name}.aim").write_text("fake")
+
+    single_scan_calls: list[tuple[Path, Path, dict[str, object]]] = []
+
+    def fake_run_single_scan_job(
+        input_path: str | Path,
+        config: dict[str, object] | None,
+        output_path: str | Path,
+    ) -> dict[str, object]:
+        config_dict = {} if config is None else dict(config)
+        single_scan_calls.append((Path(input_path), Path(output_path), config_dict))
+        return {
+            "summary": {"n_lacunae": 2, "lacuna_density_per_mm3": 4.5},
+            "threshold_results": {"selected_threshold": 210.0},
+        }
+
+    written_csv: list[tuple[Path, pd.DataFrame]] = []
+    written_json: list[tuple[Path, pd.DataFrame, dict[str, object]]] = []
+
+    def fake_write_batch_summary_csv(path: Path, table: pd.DataFrame) -> None:
+        written_csv.append((path, table.copy()))
+
+    def fake_write_batch_summary_json(
+        path: Path,
+        table: pd.DataFrame,
+        config: dict[str, object],
+    ) -> None:
+        written_json.append((path, table.copy(), dict(config)))
+
+    monkeypatch.setattr("lacunae_analysis.pipeline.run_single_scan_job", fake_run_single_scan_job)
+    monkeypatch.setattr("lacunae_analysis.pipeline.write_batch_summary_csv", fake_write_batch_summary_csv)
+    monkeypatch.setattr("lacunae_analysis.pipeline.write_batch_summary_json", fake_write_batch_summary_json)
+
+    config = {
+        "scan": {"species": "mouse"},
+        "batch": {
+            "scans": [
+                {"image_path": "alpha.aim", "group": "control"},
+                {"image_path": "beta.aim", "group": "treated", "output_dir": "nested/beta-run"},
+            ]
+        },
+    }
+
+    table = run_batch_job(input_dir, config, output_dir)
+
+    assert table["scan_name"].tolist() == ["alpha", "beta"]
+    assert table["group"].tolist() == ["control", "treated"]
+    assert single_scan_calls == [
+        (
+            input_dir / "alpha.aim",
+            output_dir / "alpha",
+            {"scan": {"species": "mouse", "group": "control"}, "batch": config["batch"]},
+        ),
+        (
+            input_dir / "beta.aim",
+            output_dir / "nested/beta-run",
+            {"scan": {"species": "mouse", "group": "treated", "output_dir": "nested/beta-run"}, "batch": config["batch"]},
+        ),
+    ]
+    assert written_csv and written_json
+    assert written_csv[0][0] == output_dir / "batch_summary.csv"
+    assert written_json[0][0] == output_dir / "batch_summary.json"
+    assert written_csv[0][1]["selected_threshold"].tolist() == [210.0, 210.0]
