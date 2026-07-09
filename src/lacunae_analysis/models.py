@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 
 @dataclass(slots=True)
 class ScanInput:
@@ -31,3 +33,14 @@ class DensityFilterSettings:
 class BatchRun:
     scans: list[ScanInput] = field(default_factory=list)
 
+
+@dataclass(slots=True)
+class LoadedScan:
+    source_path: Path
+    voxel_data: np.ndarray
+    spacing: tuple[float, float, float]
+    origin: tuple[float, float, float]
+    units: str
+    density_slope: float
+    density_intercept: float
+    metadata: dict[str, Any] = field(default_factory=dict)
