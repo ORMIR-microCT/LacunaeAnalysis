@@ -11,37 +11,55 @@ import numpy as np
 from .models import LoadedScan
 
 
-def _import_aimio() -> Any:
-    errors: list[Exception] = []
-    for module_name in ("aimio", "aimio_py"):
-        try:
-            return import_module(module_name)
-        except ModuleNotFoundError as error:
-            errors.append(error)
-
-    raise ModuleNotFoundError(
-        "Unable to import aimio-py. Install the package in the active environment "
-        "to enable AIMS read/write support."
-    ) from errors[-1]
+def _import_py_aimio() -> Any:
+    try:
+        return import_module("py_aimio")
+    except ModuleNotFoundError as error:
+        raise ModuleNotFoundError(
+            "Unable to import py_aimio from aimio-py. Install aimio-py in the "
+            "active environment to enable AIMS read/write support."
+        ) from error
 
 
-def _extract_metadata(raw_scan: Any) -> dict[str, Any]:
-    metadata = getattr(raw_scan, "meta", None)
-    if metadata is None:
-        metadata = getattr(raw_scan, "metadata", None)
-    if metadata is None:
-        return {}
-    return dict(metadata)
+def _extract_triplet(
+    metadata: dict[str, Any],
+    keys: tuple[str, ...],
+    *,
+    default: tuple[float, float, float] | None = None,
+    label: str,
+) -> tuple[float, float, float]:
+    values = None
+    matched_key = None
+    for key in keys:
+        if key in metadata:
+            values = metadata[key]
+            matched_key = key
+            break
 
-
-def _extract_triplet(raw_scan: Any, attribute: str) -> tuple[float, float, float]:
-    values = getattr(raw_scan, attribute, None)
     if values is None:
-        raise ValueError(f"AIMS scan is missing required `{attribute}` geometry.")
+        if default is not None:
+            return default
+        keys_text = "`, `".join(keys)
+        raise ValueError(f"AIMS metadata is missing required `{label}` geometry; checked `{keys_text}`.")
+
     triplet = tuple(float(value) for value in values)
     if len(triplet) != 3:
-        raise ValueError(f"AIMS scan `{attribute}` must contain exactly three values.")
+        raise ValueError(f"AIMS metadata `{matched_key}` must contain exactly three values.")
     return triplet
+
+
+def _density_equation(py_aimio: Any, metadata: dict[str, Any]) -> tuple[float, float]:
+    processing_log = metadata.get("processing_log_raw", metadata.get("processing_log", ""))
+    if isinstance(processing_log, dict):
+        processing_log = py_aimio.dict_to_log(processing_log)
+
+    try:
+        slope, intercept = py_aimio.get_aim_density_equation(processing_log)
+    except Exception:
+        slope = metadata.get("density_slope", 1.0)
+        intercept = metadata.get("density_intercept", 0.0)
+
+    return float(slope), float(intercept)
 
 
 def convert_to_density(
@@ -60,25 +78,31 @@ def load_aim_as_density(path: str | Path) -> LoadedScan:
     if source_path.suffix.lower() != ".aim":
         raise ValueError(f"Unsupported input extension: {source_path.suffix}")
 
-    aimio = _import_aimio()
-    raw_scan = aimio.read(source_path)
-    metadata = _extract_metadata(raw_scan)
-    slope = metadata.get("density_slope")
-    intercept = metadata.get("density_intercept")
-    density_data = convert_to_density(
-        np.asarray(raw_scan.data),
-        slope=slope,
-        intercept=intercept,
+    py_aimio = _import_py_aimio()
+    density_data, metadata = py_aimio.read_aim(str(source_path), density=True)
+    metadata = dict(metadata)
+    slope, intercept = _density_equation(py_aimio, metadata)
+
+    spacing = _extract_triplet(
+        metadata,
+        ("spacing", "voxel_size", "voxel_size_mm", "element_size", "element_size_mm"),
+        label="spacing",
+    )
+    origin = _extract_triplet(
+        metadata,
+        ("origin", "position", "offset"),
+        default=(0.0, 0.0, 0.0),
+        label="origin",
     )
 
     return LoadedScan(
         source_path=source_path,
-        voxel_data=density_data,
-        spacing=_extract_triplet(raw_scan, "spacing"),
-        origin=_extract_triplet(raw_scan, "origin"),
-        units="density",
-        density_slope=float(slope),
-        density_intercept=float(intercept),
+        voxel_data=np.asarray(density_data, dtype=np.float64),
+        spacing=spacing,
+        origin=origin,
+        units=str(metadata.get("unit", "BMD")),
+        density_slope=slope,
+        density_intercept=intercept,
         metadata=metadata,
     )
 
@@ -91,7 +115,7 @@ def write_binary_mask(path: str | Path, scan: LoadedScan, mask: np.ndarray) -> N
     if mask.shape != scan.voxel_data.shape:
         raise ValueError("Binary mask shape must match the loaded scan voxel grid.")
 
-    aimio = _import_aimio()
+    py_aimio = _import_py_aimio()
     mask_metadata = dict(scan.metadata)
     mask_metadata.update(
         {
@@ -101,10 +125,9 @@ def write_binary_mask(path: str | Path, scan: LoadedScan, mask: np.ndarray) -> N
         }
     )
     binary_mask = np.asarray(mask, dtype=np.uint8)
-    aimio.write(
-        output_path,
+    py_aimio.write_aim(
+        str(output_path),
         binary_mask,
-        spacing=scan.spacing,
-        origin=scan.origin,
         meta=mask_metadata,
+        unit="native",
     )
