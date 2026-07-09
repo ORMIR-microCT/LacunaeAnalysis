@@ -6,7 +6,12 @@ import numpy as np
 import SimpleITK as sitk
 
 from lacunae_analysis.models import LoadedScan
-from lacunae_analysis.segmentation import calculate_volume, segment_lacunae, voxel_sigma_to_physical_sigma
+from lacunae_analysis.segmentation import (
+    calculate_volume,
+    plot_lacuna_segmentation,
+    segment_lacunae,
+    voxel_sigma_to_physical_sigma,
+)
 
 
 def make_scan(data: np.ndarray, spacing: tuple[float, float, float] = (0.5, 0.5, 0.5)) -> LoadedScan:
@@ -52,3 +57,29 @@ def test_segment_lacunae_returns_binary_masks_and_volumes() -> None:
     assert results['lacuna_voxels'] == 1
     assert results['bone_volume'] == 8.0
     assert results['lacuna_volume'] == 0.125
+
+
+def test_plot_lacuna_segmentation_uses_filtered_lacunae_for_final_panel(tmp_path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    segmentation_results = {
+        "input_array": np.arange(27, dtype=float).reshape((3, 3, 3)),
+        "bone_mask_array": np.ones((3, 3, 3), dtype=np.uint8),
+        "lacuna_binary_array": np.ones((3, 3, 3), dtype=np.uint8),
+    }
+    filtered_lacunae = np.zeros((3, 3, 3), dtype=np.uint8)
+    filtered_lacunae[1, 1, 1] = 1
+
+    figure = plot_lacuna_segmentation(
+        segmentation_results,
+        density_results={"filtered_lacuna_binary_array": filtered_lacunae},
+        slice_index=1,
+        output_path=tmp_path / "segmentation_diagnostic.png",
+        show=False,
+    )
+
+    try:
+        assert figure.axes[3].get_title() == "Volume-filtered lacunae"
+        assert (tmp_path / "segmentation_diagnostic.png").exists()
+    finally:
+        plt.close(figure)

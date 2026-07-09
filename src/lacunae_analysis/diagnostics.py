@@ -15,31 +15,6 @@ def _ensure_parent(output_path: str | Path) -> Path:
     return path
 
 
-def build_threshold_figure(threshold_results: Mapping[str, Any]):
-    import matplotlib.pyplot as plt
-
-    labels = ["otsu_threshold", "peak_threshold", "manual_threshold", "selected_threshold"]
-    values = [float(threshold_results.get(label, 0.0) or 0.0) for label in labels]
-    display_labels = ["Otsu", "Peak", "Manual", "Selected"]
-
-    figure, axis = plt.subplots(figsize=(8, 4))
-    bars = axis.bar(display_labels, values, color=["#d62728", "#9467bd", "#2ca02c", "#1f77b4"])
-    axis.set_title("Threshold Summary")
-    axis.set_ylabel("Threshold")
-
-    for bar, value in zip(bars, values, strict=True):
-        axis.text(
-            bar.get_x() + (bar.get_width() / 2.0),
-            value,
-            f"{value:.1f}",
-            ha="center",
-            va="bottom",
-        )
-
-    figure.tight_layout()
-    return figure
-
-
 def save_threshold_plot(output_path: str | Path, figure) -> None:
     import matplotlib.pyplot as plt
 

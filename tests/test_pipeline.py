@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from lacunae_analysis.models import BatchRun, DensityFilterSettings, LoadedScan, ScanInput, ThresholdSettings
-from lacunae_analysis.pipeline import run_batch, run_batch_job, run_single_scan, summarize_batch_results
+from lacunae_analysis.pipeline import run_batch, run_batch_job, run_single_scan, run_single_scan_job, summarize_batch_results
 
 
 def make_scan() -> LoadedScan:
@@ -85,6 +85,72 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
     assert calls[1][2] == 205.0
     assert calls[2][2:] == (222.0, 10.0, 1.2)
     assert calls[3][1:6] == ("lacuna-image", "bone-image", 200.0, 1500.0, "mm")
+
+
+def test_run_single_scan_job_saves_diagnostic_figures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeFigure:
+        pass
+
+    scan = make_scan()
+    threshold_figure = FakeFigure()
+    segmentation_figure = FakeFigure()
+    saved_plots: list[tuple[Path, object]] = []
+
+    monkeypatch.setattr("lacunae_analysis.pipeline.load_aim_as_density", lambda _: scan)
+    monkeypatch.setattr(
+        "lacunae_analysis.pipeline.compute_threshold_with_figure",
+        lambda loaded_scan, manual_threshold=0.0: (
+            {"selected_threshold": 222.0, "manual_threshold": manual_threshold},
+            threshold_figure,
+        ),
+    )
+    monkeypatch.setattr(
+        "lacunae_analysis.pipeline.segment_lacunae",
+        lambda *_, **__: {
+            "lacuna_binary_sitk": "lacuna-image",
+            "bone_mask_sitk": "bone-image",
+            "bone_voxels": 8,
+            "lacuna_voxels": 2,
+            "bone_volume": 0.008,
+            "lacuna_volume": 0.002,
+        },
+    )
+    monkeypatch.setattr(
+        "lacunae_analysis.pipeline.analyze_lacuna_density",
+        lambda *_, **__: {
+            "summary": {"n_lacunae": 4, "lacuna_density_per_mm3": 12.5},
+            "component_table": pd.DataFrame({"label": [1]}),
+            "filtered_lacuna_binary_array": np.ones((2, 2, 2), dtype=np.uint8),
+            "lower_volume_um3": 200.0,
+            "upper_volume_um3": 1500.0,
+            "lower_voxel_threshold": 2,
+            "upper_voxel_threshold": 10,
+        },
+    )
+    monkeypatch.setattr(
+        "lacunae_analysis.pipeline.plot_lacuna_segmentation",
+        lambda segmentation_results, density_results=None, show=True: segmentation_figure,
+    )
+    monkeypatch.setattr(
+        "lacunae_analysis.pipeline.save_threshold_plot",
+        lambda path, figure: saved_plots.append((Path(path), figure)),
+    )
+
+    results = run_single_scan_job(
+        tmp_path / "sample.aim",
+        {"thresholding": {"manual_threshold": 205.0}},
+        tmp_path / "outputs",
+    )
+
+    assert saved_plots == [
+        (tmp_path / "outputs" / "thresholds.png", threshold_figure),
+        (tmp_path / "outputs" / "segmentation_diagnostic.png", segmentation_figure),
+    ]
+    assert "threshold_figure" not in results
+    assert results["threshold_results"]["manual_threshold"] == 205.0
 
 
 def test_run_batch_builds_rows_from_run_single_scan(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,6 @@
 # Lacunae Analysis
 
-Lacunae Analysis is a small Python package for exploring the lacunae segmentation workflow developed in `Osteobaddies_lacuna_analysis.ipynb`.
+Lacunae Analysis is a small Python package for exploring lacunae segmentation workflows for microCT scans.
 
 This repository is being migrated into an installable `src/` layout so the workflow can be reused from Python code and the command line.
 
@@ -24,7 +24,7 @@ Run a batch directory with the batch example configuration:
 lacunae-analysis batch /path/to/scan_dir --config configs/batch_example.yaml --output-dir outputs/batch_run
 ```
 
-For a package-based exploratory workflow, open `notebooks/lacunae_analysis_walkthrough.ipynb`.
+For a package-based exploratory workflow, open `lacunae_analysis_workflow_microct.ipynb` or `notebooks/lacunae_analysis_walkthrough.ipynb`.
 
 ## Layout
 

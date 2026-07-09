@@ -8,7 +8,6 @@ from typing import Any
 import pandas as pd
 
 from .diagnostics import (
-    build_threshold_figure,
     save_threshold_plot,
     write_batch_summary_csv,
     write_batch_summary_json,
@@ -19,8 +18,8 @@ from .diagnostics import (
 from .io import load_aim_as_density
 from .metrics import analyze_lacuna_density
 from .models import BatchRun, DensityFilterSettings, ScanInput, ThresholdSettings
-from .segmentation import segment_lacunae
-from .thresholding import compute_threshold
+from .segmentation import plot_lacuna_segmentation, segment_lacunae
+from .thresholding import compute_threshold, compute_threshold_with_figure
 
 
 def _resolve_threshold_settings(settings: ThresholdSettings | None) -> ThresholdSettings:
@@ -118,16 +117,24 @@ def run_single_scan(
     lacuna_sigma: float = 1.2,
     spacing_length_unit: str = "mm",
     return_images: bool = True,
+    return_threshold_figure: bool = False,
 ) -> dict[str, Any]:
     """Run the density-space lacunae workflow for one scan."""
     threshold_settings = _resolve_threshold_settings(threshold_settings)
     density_filter_settings = _resolve_density_filter_settings(density_filter_settings)
 
     loaded_scan = load_aim_as_density(scan_input.image_path)
-    threshold_results = compute_threshold(
-        loaded_scan,
-        manual_threshold=threshold_settings.manual_threshold,
-    )
+    if return_threshold_figure:
+        threshold_results, threshold_figure = compute_threshold_with_figure(
+            loaded_scan,
+            manual_threshold=threshold_settings.manual_threshold,
+        )
+    else:
+        threshold_results = compute_threshold(
+            loaded_scan,
+            manual_threshold=threshold_settings.manual_threshold,
+        )
+        threshold_figure = None
     segmentation_results = segment_lacunae(
         loaded_scan,
         threshold=float(threshold_results["selected_threshold"]),
@@ -143,7 +150,7 @@ def run_single_scan(
         return_images=return_images,
     )
 
-    return {
+    results = {
         "scan_input": scan_input,
         "loaded_scan": loaded_scan,
         "threshold_results": threshold_results,
@@ -151,6 +158,9 @@ def run_single_scan(
         "density_results": density_results,
         "summary": density_results["summary"],
     }
+    if threshold_figure is not None:
+        results["threshold_figure"] = threshold_figure
+    return results
 
 
 def run_single_scan_job(
@@ -172,10 +182,17 @@ def run_single_scan_job(
         threshold_settings=_threshold_settings_from_config(resolved_config),
         density_filter_settings=_density_filter_settings_from_config(resolved_config),
         return_images=True,
+        return_threshold_figure=True,
     )
 
-    threshold_figure = build_threshold_figure(results["threshold_results"])
+    threshold_figure = results.pop("threshold_figure")
     save_threshold_plot(output_path / "thresholds.png", threshold_figure)
+    segmentation_figure = plot_lacuna_segmentation(
+        results["segmentation_results"],
+        density_results=results["density_results"],
+        show=False,
+    )
+    save_threshold_plot(output_path / "segmentation_diagnostic.png", segmentation_figure)
     write_scan_summary_csv(output_path / "scan_summary.csv", results)
     write_scan_summary_json(output_path / "scan_summary.json", results, resolved_config)
     write_component_table_csv(

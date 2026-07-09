@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -125,21 +126,29 @@ def segment_lacunae(
 
 def plot_lacuna_segmentation(
     results: dict[str, Any],
+    density_results: dict[str, Any] | None = None,
     slice_index: int | None = None,
     pmin: float = 1,
     pmax: float = 99,
-) -> None:
-    """Quick visualization of lacuna segmentation."""
+    output_path: str | Path | None = None,
+    show: bool = True,
+) -> Any:
+    """Diagnostic visualization of segmentation and volume-filtered lacunae."""
     import matplotlib.pyplot as plt
 
     image = results["input_array"]
     bone = results.get("bone_mask_array")
     lacuna = results.get("lacuna_binary_array")
+    filtered_lacuna = None
 
     if bone is None:
         bone = sitk.GetArrayFromImage(results["bone_mask_sitk"])
     if lacuna is None:
         lacuna = sitk.GetArrayFromImage(results["lacuna_binary_sitk"])
+    if density_results is not None:
+        filtered_lacuna = density_results.get("filtered_lacuna_binary_array")
+        if filtered_lacuna is None and "filtered_lacuna_binary_sitk" in density_results:
+            filtered_lacuna = sitk.GetArrayFromImage(density_results["filtered_lacuna_binary_sitk"])
 
     if slice_index is None:
         slice_index = int(image.shape[0] // 2)
@@ -156,16 +165,18 @@ def plot_lacuna_segmentation(
     axes[2].imshow(lacuna[slice_index], cmap="gray")
     axes[2].set_title("Lacuna binary")
 
-    axes[3].imshow(image[slice_index], cmap="gray", vmin=vmin, vmax=vmax)
-    axes[3].imshow(
-        np.ma.masked_where(lacuna[slice_index] == 0, lacuna[slice_index]),
-        cmap="autumn",
-        alpha=0.7,
-    )
-    axes[3].set_title("Overlay")
+    final_lacuna = filtered_lacuna if filtered_lacuna is not None else lacuna
+    axes[3].imshow(final_lacuna[slice_index], cmap="gray")
+    axes[3].set_title("Volume-filtered lacunae" if filtered_lacuna is not None else "Lacuna binary")
 
     for axis in axes:
         axis.axis("off")
 
     figure.tight_layout()
-    plt.show()
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output_path, dpi=200, bbox_inches="tight")
+    if show:
+        plt.show()
+    return figure

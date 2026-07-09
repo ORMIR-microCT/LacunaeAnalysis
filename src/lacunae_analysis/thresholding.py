@@ -226,14 +226,35 @@ def create_hist(
     return results, fig, ax, debug
 
 
+def _with_selected_threshold(
+    results: dict[str, float | int],
+    manual_threshold: float = 0.0,
+) -> dict[str, float | int]:
+    if manual_threshold != 0.0:
+        results["selected_threshold"] = float(manual_threshold)
+    else:
+        results["selected_threshold"] = float(results["peak_threshold"])
+    return results
+
+
+def compute_threshold_with_figure(
+    scan: LoadedScan,
+    manual_threshold: float = 0.0,
+) -> tuple[dict[str, float | int], Any]:
+    """Compute thresholds and return the annotated histogram figure."""
+    results, fig, _, _ = create_hist(
+        scan,
+        manual_threshold=manual_threshold,
+        check_fit=True,
+        show=False,
+    )
+    return _with_selected_threshold(results, manual_threshold=manual_threshold), fig
+
+
 def compute_threshold(scan: LoadedScan, manual_threshold: float = 0.0) -> dict[str, float | int]:
     """Compute notebook-aligned thresholds for a loaded density scan."""
     import matplotlib.pyplot as plt
 
     results, fig, _, _ = create_hist(scan, manual_threshold=manual_threshold, show=False)
     plt.close(fig)
-    if manual_threshold != 0.0:
-        results["selected_threshold"] = float(manual_threshold)
-    else:
-        results["selected_threshold"] = float(results["peak_threshold"])
-    return results
+    return _with_selected_threshold(results, manual_threshold=manual_threshold)
