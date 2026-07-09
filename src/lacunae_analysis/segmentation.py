@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk
 
@@ -131,6 +130,8 @@ def plot_lacuna_segmentation(
     pmax: float = 99,
 ) -> None:
     """Quick visualization of lacuna segmentation."""
+    import matplotlib.pyplot as plt
+
     image = results["input_array"]
     bone = results.get("bone_mask_array")
     lacuna = results.get("lacuna_binary_array")

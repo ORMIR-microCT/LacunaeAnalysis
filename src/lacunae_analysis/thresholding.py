@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk
 
@@ -156,6 +154,8 @@ def create_hist(
     show: bool = True,
 ) -> tuple[dict[str, float | int], Any, Any, dict[str, Any]]:
     """Generate density histogram and notebook-aligned thresholds."""
+    import matplotlib.pyplot as plt
+
     image_array = np.asarray(scan.voxel_data, dtype=float)
     sitk_img = _scan_to_sitk(scan)
 
@@ -228,6 +228,8 @@ def create_hist(
 
 def compute_threshold(scan: LoadedScan, manual_threshold: float = 0.0) -> dict[str, float | int]:
     """Compute notebook-aligned thresholds for a loaded density scan."""
+    import matplotlib.pyplot as plt
+
     results, fig, _, _ = create_hist(scan, manual_threshold=manual_threshold, show=False)
     plt.close(fig)
     if manual_threshold != 0.0:
