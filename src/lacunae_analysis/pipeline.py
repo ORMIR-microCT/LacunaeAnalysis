@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from .diagnostics import (
+    build_threshold_figure,
+    save_threshold_plot,
+    write_batch_summary_csv,
+    write_batch_summary_json,
+    write_component_table_csv,
+    write_scan_summary_csv,
+    write_scan_summary_json,
+)
 from .io import load_aim_as_density
 from .metrics import analyze_lacuna_density
 from .models import BatchRun, DensityFilterSettings, ScanInput, ThresholdSettings
@@ -24,6 +34,68 @@ def _resolve_density_filter_settings(
         return settings
 
     return DensityFilterSettings(lower_volume_um3=200.0, upper_volume_um3=1500.0)
+
+
+def _threshold_settings_from_config(config: dict[str, Any]) -> ThresholdSettings:
+    threshold_config = dict(config.get("thresholding", {}))
+    method = str(threshold_config.get("method", "peak"))
+    manual_threshold = float(threshold_config.get("manual_threshold", 0.0) or 0.0)
+    use_otsu = bool(threshold_config.get("use_otsu", method == "otsu"))
+    use_peak_threshold = bool(
+        threshold_config.get("use_peak_threshold", threshold_config.get("method", "peak") == "peak")
+    )
+    if manual_threshold != 0.0:
+        use_otsu = False
+        use_peak_threshold = False
+    return ThresholdSettings(
+        manual_threshold=manual_threshold,
+        use_otsu=use_otsu,
+        use_peak_threshold=use_peak_threshold,
+    )
+
+
+def _density_filter_settings_from_config(config: dict[str, Any]) -> DensityFilterSettings:
+    density_config = dict(config.get("density_filter", {}))
+    return DensityFilterSettings(
+        lower_volume_um3=float(density_config.get("lower_volume_um3", 200.0) or 0.0),
+        upper_volume_um3=(
+            float(density_config["upper_volume_um3"])
+            if density_config.get("upper_volume_um3") is not None
+            else None
+        ),
+    )
+
+
+def _scan_metadata_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    scan_config = dict(config.get("scan", {}))
+    metadata = dict(scan_config.get("metadata", {}))
+    for key, value in scan_config.items():
+        if key not in {"image_path", "output_dir", "metadata"}:
+            metadata[key] = value
+    return metadata
+
+
+def _resolve_scan_output_dir(base_output_dir: Path, scan_config: dict[str, Any], default_name: str) -> Path:
+    configured = scan_config.get("output_dir")
+    if configured is None:
+        return base_output_dir / default_name
+
+    configured_path = Path(configured)
+    if configured_path.is_absolute():
+        return configured_path
+    return base_output_dir / configured_path
+
+
+def _resolve_batch_scan_path(input_dir: Path, image_path_value: str) -> Path:
+    image_path = Path(image_path_value)
+    if image_path.is_absolute():
+        return image_path
+
+    direct_candidate = input_dir / image_path
+    if image_path.parent != Path(".") or direct_candidate.exists():
+        return direct_candidate
+
+    return input_dir / image_path.name
 
 
 def run_single_scan(
@@ -67,6 +139,38 @@ def run_single_scan(
         "density_results": density_results,
         "summary": density_results["summary"],
     }
+
+
+def run_single_scan_job(
+    input_path: str | Path,
+    config: dict[str, Any] | None,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Run one scan and persist deterministic diagnostics."""
+    resolved_config = {} if config is None else dict(config)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    results = run_single_scan(
+        ScanInput(
+            image_path=Path(input_path),
+            output_dir=output_path,
+            metadata=_scan_metadata_from_config(resolved_config),
+        ),
+        threshold_settings=_threshold_settings_from_config(resolved_config),
+        density_filter_settings=_density_filter_settings_from_config(resolved_config),
+        return_images=True,
+    )
+
+    threshold_figure = build_threshold_figure(results["threshold_results"])
+    save_threshold_plot(output_path / "thresholds.png", threshold_figure)
+    write_scan_summary_csv(output_path / "scan_summary.csv", results)
+    write_scan_summary_json(output_path / "scan_summary.json", results, resolved_config)
+    write_component_table_csv(
+        output_path / "component_table.csv",
+        results["density_results"]["component_table"],
+    )
+    return results
 
 
 def run_batch(
@@ -117,3 +221,72 @@ def run_batch(
         )
 
     return pd.DataFrame(rows)
+
+
+def run_batch_job(
+    input_dir: str | Path,
+    config: dict[str, Any] | None,
+    output_dir: str | Path,
+) -> pd.DataFrame:
+    """Run the single-scan job over a batch and persist aggregate summaries."""
+    resolved_config = {} if config is None else dict(config)
+    input_path = Path(input_dir)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    rows: list[dict[str, Any]] = []
+    scan_entries = list(resolved_config.get("batch", {}).get("scans", []))
+
+    if scan_entries:
+        planned_scans = [
+            (
+                _resolve_batch_scan_path(input_path, str(entry["image_path"])),
+                dict(entry),
+            )
+            for entry in scan_entries
+        ]
+    else:
+        planned_scans = [(path, {}) for path in sorted(input_path.glob("*.aim"))]
+
+    for image_path, scan_config in planned_scans:
+        scan_output_dir = _resolve_scan_output_dir(output_path, scan_config, image_path.stem)
+        scan_run_config = dict(resolved_config)
+        scan_run_config["scan"] = {
+            **dict(resolved_config.get("scan", {})),
+            **{key: value for key, value in scan_config.items() if key != "image_path"},
+        }
+
+        base_row: dict[str, Any] = {
+            "scan_name": image_path.stem,
+            "image_path": str(image_path),
+            **{
+                key: value
+                for key, value in scan_config.items()
+                if key not in {"image_path", "output_dir"}
+            },
+        }
+        try:
+            results = run_single_scan_job(image_path, scan_run_config, scan_output_dir)
+        except Exception as error:
+            rows.append(
+                {
+                    **base_row,
+                    "status": "error",
+                    "error": str(error),
+                }
+            )
+            continue
+
+        rows.append(
+            {
+                **base_row,
+                "status": "ok",
+                **results["summary"],
+                **results["threshold_results"],
+            }
+        )
+
+    table = pd.DataFrame(rows)
+    write_batch_summary_csv(output_path / "batch_summary.csv", table)
+    write_batch_summary_json(output_path / "batch_summary.json", table, resolved_config)
+    return table
