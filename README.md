@@ -25,6 +25,8 @@ Run a single scan with the example configuration:
 lacunae-analysis single /path/to/scan.aim --config configs/single_scan_example.yaml --output-dir outputs/sample
 ```
 
+The single-scan output includes `component_table.csv`, which reports filtered lacuna components with volume, surface area, surface-area-to-volume ratio, centroid, border flag, PCA-based axis radii, orientation vectors, stretch, and oblateness.
+
 Run a batch directory with the batch example configuration:
 
 ```bash

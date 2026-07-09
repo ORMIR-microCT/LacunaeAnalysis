@@ -143,6 +143,9 @@ def test_analyze_lacuna_density_filters_components_and_returns_summary() -> None
     )
 
     assert results["component_table"]["voxel_count"].tolist() == [2]
+    assert "surface_area_um2" in results["component_table"].columns
+    assert "lacuna_stretch" in results["component_table"].columns
+    assert "mean_lacuna_surface_area_um2" in results["summary"]
     assert results["lower_voxel_threshold"] == 2
     assert results["upper_voxel_threshold"] == 3
     assert results["filtered_lacuna_binary_array"].sum() == 2

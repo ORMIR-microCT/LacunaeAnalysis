@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import SimpleITK as sitk
 
+from .morphology import measure_lacuna_morphology
+
 
 def _as_binary_sitk_image(image_like: sitk.Image | np.ndarray) -> sitk.Image:
     if isinstance(image_like, sitk.Image):
@@ -137,7 +139,7 @@ def summarize_lacuna_density(
     lacuna_volume = lacuna_voxels * voxel_volume
     n_lacunae = int(len(component_table))
 
-    return {
+    summary = {
         "n_lacunae": n_lacunae,
         "bone_voxels": bone_voxels,
         "lacuna_voxels": lacuna_voxels,
@@ -149,6 +151,28 @@ def summarize_lacuna_density(
         "lacuna_density_per_volume": float(n_lacunae / bone_volume) if bone_volume > 0 else 0.0,
         "lacuna_volume_fraction": float(lacuna_volume / bone_volume) if bone_volume > 0 else 0.0,
     }
+    if "surface_area_um2" in component_table.columns:
+        summary["mean_lacuna_surface_area_um2"] = (
+            float(component_table["surface_area_um2"].mean()) if n_lacunae > 0 else 0.0
+        )
+        summary["median_lacuna_surface_area_um2"] = (
+            float(component_table["surface_area_um2"].median()) if n_lacunae > 0 else 0.0
+        )
+    if "lacuna_stretch" in component_table.columns:
+        summary["mean_lacuna_stretch"] = (
+            float(component_table["lacuna_stretch"].mean()) if n_lacunae > 0 else 0.0
+        )
+        summary["median_lacuna_stretch"] = (
+            float(component_table["lacuna_stretch"].median()) if n_lacunae > 0 else 0.0
+        )
+    if "lacuna_oblateness" in component_table.columns:
+        summary["mean_lacuna_oblateness"] = (
+            float(component_table["lacuna_oblateness"].mean()) if n_lacunae > 0 else 0.0
+        )
+        summary["median_lacuna_oblateness"] = (
+            float(component_table["lacuna_oblateness"].median()) if n_lacunae > 0 else 0.0
+        )
+    return summary
 
 
 def analyze_lacuna_density(
@@ -186,6 +210,12 @@ def analyze_lacuna_density(
     filtered_binary_array = build_filtered_binary(
         labeled_array,
         filtered_table["label"].to_numpy() if not filtered_table.empty else [],
+    )
+    filtered_table = measure_lacuna_morphology(
+        labeled_array,
+        filtered_table,
+        spacing=lacuna_sitk.GetSpacing(),
+        spacing_length_unit=spacing_length_unit,
     )
 
     filtered_binary_image = binary_array_to_sitk(filtered_binary_array, lacuna_sitk)
