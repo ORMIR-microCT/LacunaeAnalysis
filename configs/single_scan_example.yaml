@@ -8,6 +8,5 @@ thresholding:
   use_otsu: true
 
 density_filter:
-  lower_volume_um3: 0.0
-  upper_volume_um3: null
-
+  include_edge_lacunae: false
+  edge_width: 2

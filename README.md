@@ -27,6 +27,8 @@ lacunae-analysis single /path/to/scan.aim --config configs/single_scan_example.y
 
 The single-scan output includes `component_table.csv`, which reports filtered lacuna components with volume, surface area, surface-area-to-volume ratio, centroid, border flag, PCA-based axis radii, orientation vectors, stretch, and oblateness.
 
+Edge-touching lacunae are excluded by default. To retain them, set `include_edge_lacunae: true` under `density_filter` in the YAML config.
+
 Run a batch directory with the batch example configuration:
 
 ```bash

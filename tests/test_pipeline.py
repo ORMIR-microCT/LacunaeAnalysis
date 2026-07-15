@@ -6,7 +6,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lacunae_analysis.models import BatchRun, DensityFilterSettings, LoadedScan, ScanInput, ThresholdSettings
+from lacunae_analysis.models import (
+    DEFAULT_LOWER_VOLUME_UM3,
+    DEFAULT_UPPER_VOLUME_UM3,
+    BatchRun,
+    DensityFilterSettings,
+    LoadedScan,
+    ScanInput,
+    ThresholdSettings,
+)
 from lacunae_analysis.pipeline import run_batch, run_batch_job, run_single_scan, run_single_scan_job, summarize_batch_results
 
 
@@ -53,6 +61,8 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
         upper_volume_um3: float,
         spacing_length_unit: str,
         return_images: bool,
+        include_edge_lacunae: bool,
+        edge_width: int,
     ) -> dict[str, object]:
         calls.append(
             (
@@ -63,6 +73,8 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
                 upper_volume_um3,
                 spacing_length_unit,
                 return_images,
+                include_edge_lacunae,
+                edge_width,
             )
         )
         return {"summary": {"n_lacunae": 4, "lacuna_density_per_mm3": 12.5}}
@@ -75,7 +87,7 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
     results = run_single_scan(
         ScanInput(image_path=Path("/tmp/sample.aim")),
         threshold_settings=ThresholdSettings(manual_threshold=205.0),
-        density_filter_settings=DensityFilterSettings(lower_volume_um3=200.0, upper_volume_um3=1500.0),
+        density_filter_settings=DensityFilterSettings(),
         bone_sigma=10.0,
         lacuna_sigma=1.2,
     )
@@ -84,7 +96,14 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
     assert [call[0] for call in calls] == ["load", "threshold", "segment", "analyze"]
     assert calls[1][2] == 205.0
     assert calls[2][2:] == (222.0, 10.0, 1.2)
-    assert calls[3][1:6] == ("lacuna-image", "bone-image", 200.0, 1500.0, "mm")
+    assert calls[3][1:6] == (
+        "lacuna-image",
+        "bone-image",
+        DEFAULT_LOWER_VOLUME_UM3,
+        DEFAULT_UPPER_VOLUME_UM3,
+        "mm",
+    )
+    assert calls[3][6:] == (True, False, 2)
 
 
 def test_run_single_scan_job_saves_diagnostic_figures(
@@ -124,10 +143,13 @@ def test_run_single_scan_job_saves_diagnostic_figures(
             "summary": {"n_lacunae": 4, "lacuna_density_per_mm3": 12.5},
             "component_table": pd.DataFrame({"label": [1]}),
             "filtered_lacuna_binary_array": np.ones((2, 2, 2), dtype=np.uint8),
-            "lower_volume_um3": 200.0,
-            "upper_volume_um3": 1500.0,
+            "lower_volume_um3": DEFAULT_LOWER_VOLUME_UM3,
+            "upper_volume_um3": DEFAULT_UPPER_VOLUME_UM3,
             "lower_voxel_threshold": 2,
             "upper_voxel_threshold": 10,
+            "include_edge_lacunae": False,
+            "edge_width": 2,
+            "excluded_border_count": 0,
         },
     )
     monkeypatch.setattr(

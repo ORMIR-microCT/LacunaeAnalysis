@@ -9,6 +9,12 @@ import pandas as pd
 import SimpleITK as sitk
 
 from .morphology import measure_lacuna_morphology
+from .models import (
+    DEFAULT_EDGE_WIDTH,
+    DEFAULT_INCLUDE_EDGE_LACUNAE,
+    DEFAULT_LOWER_VOLUME_UM3,
+    DEFAULT_UPPER_VOLUME_UM3,
+)
 
 
 def _as_binary_sitk_image(image_like: sitk.Image | np.ndarray) -> sitk.Image:
@@ -178,10 +184,12 @@ def summarize_lacuna_density(
 def analyze_lacuna_density(
     lacuna_binary_input: sitk.Image | np.ndarray,
     bone_mask_input: sitk.Image | np.ndarray,
-    lower_volume_um3: float = 200.0,
-    upper_volume_um3: float | None = 1500.0,
+    lower_volume_um3: float = DEFAULT_LOWER_VOLUME_UM3,
+    upper_volume_um3: float | None = DEFAULT_UPPER_VOLUME_UM3,
     spacing_length_unit: str = "mm",
     return_images: bool = True,
+    include_edge_lacunae: bool = DEFAULT_INCLUDE_EDGE_LACUNAE,
+    edge_width: int = DEFAULT_EDGE_WIDTH,
 ) -> dict[str, Any]:
     """
     Filter connected lacunae by size and compute density statistics.
@@ -207,15 +215,24 @@ def analyze_lacuna_density(
         voxel_volume=voxel_volume,
     )
 
-    filtered_binary_array = build_filtered_binary(
-        labeled_array,
-        filtered_table["label"].to_numpy() if not filtered_table.empty else [],
-    )
     filtered_table = measure_lacuna_morphology(
         labeled_array,
         filtered_table,
         spacing=lacuna_sitk.GetSpacing(),
         spacing_length_unit=spacing_length_unit,
+        edge_width=edge_width,
+    )
+
+    border_count = int(filtered_table["border"].sum()) if "border" in filtered_table.columns else 0
+    if not include_edge_lacunae and "border" in filtered_table.columns:
+        filtered_table = filtered_table[filtered_table["border"] == 0].reset_index(drop=True)
+        excluded_border_count = border_count
+    else:
+        excluded_border_count = 0
+
+    filtered_binary_array = build_filtered_binary(
+        labeled_array,
+        filtered_table["label"].to_numpy() if not filtered_table.empty else [],
     )
 
     filtered_binary_image = binary_array_to_sitk(filtered_binary_array, lacuna_sitk)
@@ -225,6 +242,7 @@ def analyze_lacuna_density(
         bone_mask_image=bone_sitk,
         component_table=filtered_table,
     )
+    summary["excluded_border_count"] = int(excluded_border_count)
 
     if spacing_length_unit == "mm":
         summary["lacuna_density_per_mm3"] = summary["lacuna_density_per_volume"]
@@ -244,6 +262,9 @@ def analyze_lacuna_density(
         "upper_voxel_threshold": int(upper_voxel_threshold) if upper_voxel_threshold is not None else None,
         "spacing_length_unit": spacing_length_unit,
         "voxel_volume_image_units": float(voxel_volume),
+        "include_edge_lacunae": bool(include_edge_lacunae),
+        "edge_width": int(edge_width),
+        "excluded_border_count": int(excluded_border_count),
     }
 
     if return_images:

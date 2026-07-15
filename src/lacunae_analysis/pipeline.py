@@ -17,7 +17,16 @@ from .diagnostics import (
 )
 from .io import load_aim_as_density
 from .metrics import analyze_lacuna_density
-from .models import BatchRun, DensityFilterSettings, ScanInput, ThresholdSettings
+from .models import (
+    DEFAULT_EDGE_WIDTH,
+    DEFAULT_INCLUDE_EDGE_LACUNAE,
+    DEFAULT_LOWER_VOLUME_UM3,
+    DEFAULT_UPPER_VOLUME_UM3,
+    BatchRun,
+    DensityFilterSettings,
+    ScanInput,
+    ThresholdSettings,
+)
 from .segmentation import plot_lacuna_segmentation, segment_lacunae
 from .thresholding import compute_threshold, compute_threshold_with_figure
 
@@ -32,7 +41,7 @@ def _resolve_density_filter_settings(
     if settings is not None:
         return settings
 
-    return DensityFilterSettings(lower_volume_um3=200.0, upper_volume_um3=1500.0)
+    return DensityFilterSettings()
 
 
 def _threshold_settings_from_config(config: dict[str, Any]) -> ThresholdSettings:
@@ -55,13 +64,20 @@ def _threshold_settings_from_config(config: dict[str, Any]) -> ThresholdSettings
 
 def _density_filter_settings_from_config(config: dict[str, Any]) -> DensityFilterSettings:
     density_config = dict(config.get("density_filter", {}))
-    return DensityFilterSettings(
-        lower_volume_um3=float(density_config.get("lower_volume_um3", 200.0) or 0.0),
-        upper_volume_um3=(
+    if "upper_volume_um3" in density_config:
+        upper_volume_um3 = (
             float(density_config["upper_volume_um3"])
-            if density_config.get("upper_volume_um3") is not None
+            if density_config["upper_volume_um3"] is not None
             else None
-        ),
+        )
+    else:
+        upper_volume_um3 = DEFAULT_UPPER_VOLUME_UM3
+
+    return DensityFilterSettings(
+        lower_volume_um3=float(density_config.get("lower_volume_um3", DEFAULT_LOWER_VOLUME_UM3) or 0.0),
+        upper_volume_um3=upper_volume_um3,
+        include_edge_lacunae=bool(density_config.get("include_edge_lacunae", DEFAULT_INCLUDE_EDGE_LACUNAE)),
+        edge_width=int(density_config.get("edge_width", DEFAULT_EDGE_WIDTH) or 0),
     )
 
 
@@ -148,6 +164,8 @@ def run_single_scan(
         upper_volume_um3=density_filter_settings.upper_volume_um3,
         spacing_length_unit=spacing_length_unit,
         return_images=return_images,
+        include_edge_lacunae=density_filter_settings.include_edge_lacunae,
+        edge_width=density_filter_settings.edge_width,
     )
 
     results = {

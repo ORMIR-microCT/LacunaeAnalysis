@@ -123,16 +123,10 @@ def test_summarize_lacuna_density_reports_density_statistics() -> None:
 
 
 def test_analyze_lacuna_density_filters_components_and_returns_summary() -> None:
-    lacuna_binary = make_binary_image(
-        np.array(
-            [
-                [[1, 1, 0], [0, 0, 0], [0, 1, 0]],
-                [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-            ],
-            dtype=np.uint8,
-        )
-    , spacing=(1.0, 1.0, 1.0))
-    bone_mask = make_binary_image(np.ones((2, 3, 3), dtype=np.uint8))
+    lacuna_array = np.zeros((6, 6, 6), dtype=np.uint8)
+    lacuna_array[2, 2, 2:4] = 1
+    lacuna_binary = make_binary_image(lacuna_array, spacing=(1.0, 1.0, 1.0))
+    bone_mask = make_binary_image(np.ones((6, 6, 6), dtype=np.uint8), spacing=(1.0, 1.0, 1.0))
 
     results = analyze_lacuna_density(
         lacuna_binary,
@@ -151,3 +145,62 @@ def test_analyze_lacuna_density_filters_components_and_returns_summary() -> None
     assert results["filtered_lacuna_binary_array"].sum() == 2
     assert results["summary"]["n_lacunae"] == 1
     assert results["summary"]["lacuna_density_per_mm3"] > 0.0
+
+
+def test_analyze_lacuna_density_excludes_edge_lacunae_by_default() -> None:
+    lacuna_binary = make_binary_image(
+        np.array(
+            [
+                [[1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+                [[0, 0, 0, 0], [0, 1, 1, 0], [0, 1, 0, 0], [0, 0, 0, 0]],
+                [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+            ],
+            dtype=np.uint8,
+        ),
+        spacing=(1.0, 1.0, 1.0),
+    )
+    bone_mask = make_binary_image(np.ones((3, 4, 4), dtype=np.uint8), spacing=(1.0, 1.0, 1.0))
+
+    results = analyze_lacuna_density(
+        lacuna_binary,
+        bone_mask,
+        lower_volume_um3=0.0,
+        upper_volume_um3=None,
+        spacing_length_unit="um",
+        edge_width=1,
+    )
+
+    assert results["component_table"]["label"].tolist() == [2]
+    assert results["component_table"]["border"].tolist() == [0]
+    assert results["summary"]["n_lacunae"] == 1
+    assert results["summary"]["excluded_border_count"] == 1
+    assert results["filtered_lacuna_binary_array"].sum() == 3
+
+
+def test_analyze_lacuna_density_can_include_edge_lacunae() -> None:
+    lacuna_binary = make_binary_image(
+        np.array(
+            [
+                [[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+                [[0, 0, 0], [0, 1, 1], [0, 1, 0]],
+            ],
+            dtype=np.uint8,
+        ),
+        spacing=(1.0, 1.0, 1.0),
+    )
+    bone_mask = make_binary_image(np.ones((2, 3, 3), dtype=np.uint8), spacing=(1.0, 1.0, 1.0))
+
+    results = analyze_lacuna_density(
+        lacuna_binary,
+        bone_mask,
+        lower_volume_um3=0.0,
+        upper_volume_um3=None,
+        spacing_length_unit="um",
+        include_edge_lacunae=True,
+        edge_width=1,
+    )
+
+    assert results["component_table"]["label"].tolist() == [2, 1]
+    assert results["component_table"]["border"].tolist() == [1, 1]
+    assert results["summary"]["n_lacunae"] == 2
+    assert results["summary"]["excluded_border_count"] == 0

@@ -9,6 +9,12 @@ from typing import Any
 import numpy as np
 
 
+DEFAULT_LOWER_VOLUME_UM3 = 100.0
+DEFAULT_UPPER_VOLUME_UM3 = 2000.0
+DEFAULT_INCLUDE_EDGE_LACUNAE = False
+DEFAULT_EDGE_WIDTH = 2
+
+
 @dataclass(slots=True)
 class ScanInput:
     image_path: Path
@@ -25,8 +31,10 @@ class ThresholdSettings:
 
 @dataclass(slots=True)
 class DensityFilterSettings:
-    lower_volume_um3: float = 0.0
-    upper_volume_um3: float | None = None
+    lower_volume_um3: float = DEFAULT_LOWER_VOLUME_UM3
+    upper_volume_um3: float | None = DEFAULT_UPPER_VOLUME_UM3
+    include_edge_lacunae: bool = DEFAULT_INCLUDE_EDGE_LACUNAE
+    edge_width: int = DEFAULT_EDGE_WIDTH
 
 
 @dataclass(slots=True)
