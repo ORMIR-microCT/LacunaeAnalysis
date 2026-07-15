@@ -34,8 +34,8 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
     calls: list[object] = []
     scan = make_scan()
 
-    def fake_load(path: str | Path) -> LoadedScan:
-        calls.append(("load", Path(path)))
+    def fake_load(path: str | Path, intensity_unit: str | None = None) -> LoadedScan:
+        calls.append(("load", Path(path), intensity_unit))
         return scan
 
     def fake_threshold(loaded_scan: LoadedScan, manual_threshold: float = 0.0) -> dict[str, float]:
@@ -79,13 +79,13 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
         )
         return {"summary": {"n_lacunae": 4, "lacuna_density_per_mm3": 12.5}}
 
-    monkeypatch.setattr("lacunae_analysis.pipeline.load_aim_as_density", fake_load)
+    monkeypatch.setattr("lacunae_analysis.pipeline.load_scan", fake_load)
     monkeypatch.setattr("lacunae_analysis.pipeline.compute_threshold", fake_threshold)
     monkeypatch.setattr("lacunae_analysis.pipeline.segment_lacunae", fake_segment)
     monkeypatch.setattr("lacunae_analysis.pipeline.analyze_lacuna_density", fake_analyze)
 
     results = run_single_scan(
-        ScanInput(image_path=Path("/tmp/sample.aim")),
+        ScanInput(image_path=Path("/tmp/sample.aim"), intensity_unit="raw"),
         threshold_settings=ThresholdSettings(manual_threshold=205.0),
         density_filter_settings=DensityFilterSettings(),
         bone_sigma=10.0,
@@ -94,6 +94,7 @@ def test_run_single_scan_chains_loading_threshold_segmentation_and_metrics(monke
 
     assert results["summary"] == {"n_lacunae": 4, "lacuna_density_per_mm3": 12.5}
     assert [call[0] for call in calls] == ["load", "threshold", "segment", "analyze"]
+    assert calls[0] == ("load", Path("/tmp/sample.aim"), "raw")
     assert calls[1][2] == 205.0
     assert calls[2][2:] == (222.0, 10.0, 1.2)
     assert calls[3][1:6] == (
@@ -118,7 +119,11 @@ def test_run_single_scan_job_saves_diagnostic_figures(
     segmentation_figure = FakeFigure()
     saved_plots: list[tuple[Path, object]] = []
 
-    monkeypatch.setattr("lacunae_analysis.pipeline.load_aim_as_density", lambda _: scan)
+    loaded_units: list[str | None] = []
+    monkeypatch.setattr(
+        "lacunae_analysis.pipeline.load_scan",
+        lambda _, intensity_unit=None: loaded_units.append(intensity_unit) or scan,
+    )
     monkeypatch.setattr(
         "lacunae_analysis.pipeline.compute_threshold_with_figure",
         lambda loaded_scan, manual_threshold=0.0: (
@@ -163,7 +168,7 @@ def test_run_single_scan_job_saves_diagnostic_figures(
 
     results = run_single_scan_job(
         tmp_path / "sample.aim",
-        {"thresholding": {"manual_threshold": 205.0}},
+        {"scan": {"intensity_unit": "hu"}, "thresholding": {"manual_threshold": 205.0}},
         tmp_path / "outputs",
     )
 
@@ -173,6 +178,7 @@ def test_run_single_scan_job_saves_diagnostic_figures(
     ]
     assert "threshold_figure" not in results
     assert results["threshold_results"]["manual_threshold"] == 205.0
+    assert loaded_units == ["hu"]
 
 
 def test_run_batch_builds_rows_from_run_single_scan(monkeypatch: pytest.MonkeyPatch) -> None:

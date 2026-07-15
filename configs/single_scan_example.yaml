@@ -1,6 +1,7 @@
 scan:
   image_path: input_lacunae_scans/f0000593.aim
   output_dir: outputs/single_scan_example
+  intensity_unit: bmd
 
 thresholding:
   method: peak

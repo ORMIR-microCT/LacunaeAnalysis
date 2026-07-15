@@ -1,4 +1,4 @@
-"""Segmentation utilities for density-space lacunae analysis."""
+"""Segmentation utilities for lacunae analysis."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def segment_lacunae(
     bone_sigma: float,
     lacuna_sigma: float,
 ) -> dict[str, Any]:
-    """Run notebook-aligned lacuna segmentation on a loaded density scan."""
+    """Run notebook-aligned lacuna segmentation on a loaded scan."""
     image_array = np.asarray(scan.voxel_data, dtype=float)
     sitk_img = _scan_to_sitk(scan)
     max_intensity = float(image_array.max())

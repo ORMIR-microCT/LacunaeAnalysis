@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from .models import LoadedScan
+from .models import DEFAULT_AIM_INTENSITY_UNIT, SUPPORTED_INTENSITY_UNITS, IntensityUnit, LoadedScan
 
 
 def _import_py_aimio() -> Any:
@@ -73,13 +73,32 @@ def convert_to_density(
     return voxel_data.astype(np.float64, copy=False) * float(slope) + float(intercept)
 
 
-def load_aim_as_density(path: str | Path) -> LoadedScan:
+def _normalize_intensity_unit(intensity_unit: str | None, *, default: IntensityUnit) -> IntensityUnit:
+    selected_unit = default if intensity_unit is None else str(intensity_unit).lower()
+    if selected_unit not in SUPPORTED_INTENSITY_UNITS:
+        supported = ", ".join(SUPPORTED_INTENSITY_UNITS)
+        raise ValueError(f"Unsupported intensity unit `{intensity_unit}`. Expected one of: {supported}.")
+    return selected_unit  # type: ignore[return-value]
+
+
+def load_aim(path: str | Path, intensity_unit: str | None = DEFAULT_AIM_INTENSITY_UNIT) -> LoadedScan:
     source_path = Path(path)
     if source_path.suffix.lower() != ".aim":
         raise ValueError(f"Unsupported input extension: {source_path.suffix}")
 
+    selected_unit = _normalize_intensity_unit(intensity_unit, default=DEFAULT_AIM_INTENSITY_UNIT)
+    if selected_unit == "mu":
+        raise NotImplementedError(
+            "AIM linear attenuation (`mu`) conversion is not exposed by aimio-py. "
+            "Use `raw`, `bmd`, or `hu`, or provide a conversion formula before selecting `mu`."
+        )
+
     py_aimio = _import_py_aimio()
-    density_data, metadata = py_aimio.read_aim(str(source_path), density=True)
+    voxel_data, metadata = py_aimio.read_aim(
+        str(source_path),
+        density=selected_unit == "bmd",
+        hu=selected_unit == "hu",
+    )
     metadata = dict(metadata)
     slope, intercept = _density_equation(py_aimio, metadata)
 
@@ -97,14 +116,25 @@ def load_aim_as_density(path: str | Path) -> LoadedScan:
 
     return LoadedScan(
         source_path=source_path,
-        voxel_data=np.asarray(density_data, dtype=np.float64),
+        voxel_data=np.asarray(voxel_data, dtype=np.float64),
         spacing=spacing,
         origin=origin,
-        units=str(metadata.get("unit", "BMD")),
+        units=str(metadata.get("unit", selected_unit)),
         density_slope=slope,
         density_intercept=intercept,
         metadata=metadata,
     )
+
+
+def load_scan(path: str | Path, intensity_unit: str | None = None) -> LoadedScan:
+    source_path = Path(path)
+    if source_path.suffix.lower() == ".aim":
+        return load_aim(source_path, intensity_unit=intensity_unit or DEFAULT_AIM_INTENSITY_UNIT)
+    raise ValueError(f"Unsupported input extension: {source_path.suffix}")
+
+
+def load_aim_as_density(path: str | Path) -> LoadedScan:
+    return load_aim(path, intensity_unit="bmd")
 
 
 def write_binary_mask(path: str | Path, scan: LoadedScan, mask: np.ndarray) -> None:

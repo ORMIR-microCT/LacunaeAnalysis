@@ -153,7 +153,7 @@ def create_hist(
     ignore_below: float | None = None,
     show: bool = True,
 ) -> tuple[dict[str, float | int], Any, Any, dict[str, Any]]:
-    """Generate density histogram and notebook-aligned thresholds."""
+    """Generate intensity histogram and notebook-aligned thresholds."""
     import matplotlib.pyplot as plt
 
     image_array = np.asarray(scan.voxel_data, dtype=float)
@@ -252,7 +252,7 @@ def compute_threshold_with_figure(
 
 
 def compute_threshold(scan: LoadedScan, manual_threshold: float = 0.0) -> dict[str, float | int]:
-    """Compute notebook-aligned thresholds for a loaded density scan."""
+    """Compute notebook-aligned thresholds for a loaded scan."""
     import matplotlib.pyplot as plt
 
     results, fig, _, _ = create_hist(scan, manual_threshold=manual_threshold, show=False)

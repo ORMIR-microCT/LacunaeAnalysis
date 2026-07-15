@@ -10,6 +10,9 @@ thresholding:
   manual_threshold: 0.0
   use_otsu: true
 
+scan:
+  intensity_unit: bmd
+
 density_filter:
   include_edge_lacunae: false
   edge_width: 2

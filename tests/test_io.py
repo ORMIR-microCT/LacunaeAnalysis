@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from lacunae_analysis.io import convert_to_density, load_aim_as_density, write_binary_mask
+from lacunae_analysis.io import convert_to_density, load_aim, load_aim_as_density, load_scan, write_binary_mask
 from lacunae_analysis.models import LoadedScan
 
 
@@ -30,7 +32,7 @@ def test_load_aim_as_density_rejects_non_aim_input(tmp_path) -> None:
         load_aim_as_density(path)
 
 
-def test_load_aim_as_density_converts_voxels_and_preserves_geometry(
+def test_load_aim_defaults_to_bmd_and_preserves_geometry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -48,9 +50,10 @@ def test_load_aim_as_density_converts_voxels_and_preserves_geometry(
 
     class FakeAimIO:
         @staticmethod
-        def read_aim(input_path: str, density: bool = False):
+        def read_aim(input_path: str, density: bool = False, hu: bool = False):
             recorded["input_path"] = input_path
             recorded["density"] = density
+            recorded["hu"] = hu
             return density_data, metadata
 
         @staticmethod
@@ -64,11 +67,12 @@ def test_load_aim_as_density_converts_voxels_and_preserves_geometry(
 
     monkeypatch.setattr("lacunae_analysis.io._import_py_aimio", lambda: FakeAimIO)
 
-    loaded = load_aim_as_density(path)
+    loaded = load_aim(path)
 
     assert recorded == {
         "input_path": str(path),
         "density": True,
+        "hu": False,
         "processing_log": "calibration text",
     }
     assert isinstance(loaded, LoadedScan)
@@ -80,6 +84,113 @@ def test_load_aim_as_density_converts_voxels_and_preserves_geometry(
     assert loaded.density_slope == 2.5
     assert loaded.density_intercept == 10.0
     assert loaded.metadata["scanner"] == "test-rig"
+
+
+def test_load_aim_can_return_raw_greyscale(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    path = tmp_path / "scan.aim"
+    path.write_bytes(b"aim")
+    recorded: dict[str, object] = {}
+    raw_data = np.array([[10, 20], [30, 40]], dtype=np.int16)
+    metadata = {
+        "spacing": (1.0, 1.0, 1.0),
+        "origin": (0.0, 0.0, 0.0),
+        "processing_log_raw": "calibration text",
+    }
+
+    class FakeAimIO:
+        @staticmethod
+        def read_aim(input_path: str, density: bool = False, hu: bool = False):
+            recorded["input_path"] = input_path
+            recorded["density"] = density
+            recorded["hu"] = hu
+            return raw_data, metadata
+
+        @staticmethod
+        def get_aim_density_equation(processing_log: str) -> tuple[float, float]:
+            return 2.5, 10.0
+
+    monkeypatch.setattr("lacunae_analysis.io._import_py_aimio", lambda: FakeAimIO)
+
+    loaded = load_aim(path, intensity_unit="raw")
+
+    assert recorded == {"input_path": str(path), "density": False, "hu": False}
+    assert np.array_equal(loaded.voxel_data, raw_data.astype(np.float64))
+    assert loaded.units == "raw"
+
+
+def test_load_aim_can_return_hu(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    path = tmp_path / "scan.aim"
+    path.write_bytes(b"aim")
+    recorded: dict[str, object] = {}
+    hu_data = np.array([[-1000.0, 0.0], [500.0, 1200.0]])
+    metadata = {
+        "spacing": (1.0, 1.0, 1.0),
+        "origin": (0.0, 0.0, 0.0),
+        "unit": "HU",
+        "processing_log_raw": "calibration text",
+    }
+
+    class FakeAimIO:
+        @staticmethod
+        def read_aim(input_path: str, density: bool = False, hu: bool = False):
+            recorded["input_path"] = input_path
+            recorded["density"] = density
+            recorded["hu"] = hu
+            return hu_data, metadata
+
+        @staticmethod
+        def get_aim_density_equation(processing_log: str) -> tuple[float, float]:
+            return 2.5, 10.0
+
+    monkeypatch.setattr("lacunae_analysis.io._import_py_aimio", lambda: FakeAimIO)
+
+    loaded = load_aim(path, intensity_unit="HU")
+
+    assert recorded == {"input_path": str(path), "density": False, "hu": True}
+    assert np.array_equal(loaded.voxel_data, hu_data)
+    assert loaded.units == "HU"
+
+
+def test_load_aim_reports_unsupported_mu_for_aim(tmp_path) -> None:
+    path = tmp_path / "scan.aim"
+    path.write_bytes(b"aim")
+
+    with pytest.raises(NotImplementedError, match="linear attenuation"):
+        load_aim(path, intensity_unit="mu")
+
+
+def test_load_scan_dispatches_aim_with_selected_intensity_unit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    path = tmp_path / "scan.aim"
+    path.write_bytes(b"aim")
+    recorded: dict[str, object] = {}
+
+    def fake_load_aim(input_path: str | Path, intensity_unit: str | None = None) -> LoadedScan:
+        recorded["input_path"] = input_path
+        recorded["intensity_unit"] = intensity_unit
+        return LoadedScan(
+            source_path=Path(input_path),
+            voxel_data=np.ones((1, 1, 1)),
+            spacing=(1.0, 1.0, 1.0),
+            origin=(0.0, 0.0, 0.0),
+            units=str(intensity_unit),
+            density_slope=1.0,
+            density_intercept=0.0,
+        )
+
+    monkeypatch.setattr("lacunae_analysis.io.load_aim", fake_load_aim)
+
+    load_scan(path, intensity_unit="raw")
+
+    assert recorded == {"input_path": path, "intensity_unit": "raw"}
 
 
 def test_write_binary_mask_uses_aimio_with_scan_geometry(

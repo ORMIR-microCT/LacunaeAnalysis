@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -13,12 +13,16 @@ DEFAULT_LOWER_VOLUME_UM3 = 100.0
 DEFAULT_UPPER_VOLUME_UM3 = 2000.0
 DEFAULT_INCLUDE_EDGE_LACUNAE = False
 DEFAULT_EDGE_WIDTH = 2
+SUPPORTED_INTENSITY_UNITS = ("raw", "bmd", "hu", "mu")
+DEFAULT_AIM_INTENSITY_UNIT = "bmd"
+IntensityUnit = Literal["raw", "bmd", "hu", "mu"]
 
 
 @dataclass(slots=True)
 class ScanInput:
     image_path: Path
     output_dir: Path | None = None
+    intensity_unit: IntensityUnit = DEFAULT_AIM_INTENSITY_UNIT
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

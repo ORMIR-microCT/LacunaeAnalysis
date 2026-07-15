@@ -15,9 +15,10 @@ from .diagnostics import (
     write_scan_summary_csv,
     write_scan_summary_json,
 )
-from .io import load_aim_as_density
+from .io import load_scan
 from .metrics import analyze_lacuna_density
 from .models import (
+    DEFAULT_AIM_INTENSITY_UNIT,
     DEFAULT_EDGE_WIDTH,
     DEFAULT_INCLUDE_EDGE_LACUNAE,
     DEFAULT_LOWER_VOLUME_UM3,
@@ -81,11 +82,16 @@ def _density_filter_settings_from_config(config: dict[str, Any]) -> DensityFilte
     )
 
 
+def _scan_intensity_unit_from_config(config: dict[str, Any]) -> str:
+    scan_config = dict(config.get("scan", {}))
+    return str(scan_config.get("intensity_unit", DEFAULT_AIM_INTENSITY_UNIT)).lower()
+
+
 def _scan_metadata_from_config(config: dict[str, Any]) -> dict[str, Any]:
     scan_config = dict(config.get("scan", {}))
     metadata = dict(scan_config.get("metadata", {}))
     for key, value in scan_config.items():
-        if key not in {"image_path", "output_dir", "metadata"}:
+        if key not in {"image_path", "output_dir", "intensity_unit", "metadata"}:
             metadata[key] = value
     return metadata
 
@@ -135,11 +141,11 @@ def run_single_scan(
     return_images: bool = True,
     return_threshold_figure: bool = False,
 ) -> dict[str, Any]:
-    """Run the density-space lacunae workflow for one scan."""
+    """Run the lacunae workflow for one scan."""
     threshold_settings = _resolve_threshold_settings(threshold_settings)
     density_filter_settings = _resolve_density_filter_settings(density_filter_settings)
 
-    loaded_scan = load_aim_as_density(scan_input.image_path)
+    loaded_scan = load_scan(scan_input.image_path, intensity_unit=scan_input.intensity_unit)
     if return_threshold_figure:
         threshold_results, threshold_figure = compute_threshold_with_figure(
             loaded_scan,
@@ -195,6 +201,7 @@ def run_single_scan_job(
         ScanInput(
             image_path=Path(input_path),
             output_dir=output_path,
+            intensity_unit=_scan_intensity_unit_from_config(resolved_config),
             metadata=_scan_metadata_from_config(resolved_config),
         ),
         threshold_settings=_threshold_settings_from_config(resolved_config),
