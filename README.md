@@ -1,5 +1,11 @@
 # Lacunae Analysis
 
+> **Archived repository:** This repository is retained only as the legacy
+> `ORMIR-microCT` copy. Active development has moved to
+> [`PediatricMSKImaging/LacunaAnalysis`](https://github.com/PediatricMSKImaging/LacunaAnalysis),
+> which is now the lab-hosted source repository. The replacement ORMIR repository
+> should be created as a fork of that lab repository.
+
 Lacunae Analysis is a small Python package for exploring lacunae segmentation workflows for microCT scans.
 
 This repository is being migrated into an installable `src/` layout so the workflow can be reused from Python code and the command line.
